@@ -1,8 +1,10 @@
 package com.github.kongchen.swagger.docgen;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.module.jaxb.JaxbAnnotationModule;
 import com.fasterxml.jackson.module.jaxb.JaxbAnnotationModule.Priority;
@@ -38,12 +40,24 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.nio.charset.Charset;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 import static org.apache.commons.lang3.StringUtils.defaultString;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
@@ -62,7 +76,6 @@ public abstract class AbstractDocumentSource<D extends AbstractReader & ClassSwa
     private final String swaggerPath;
     private final String modelSubstitute;
     private final boolean jsonExampleValues;
-    private ObjectMapper mapper = Json.mapper();
     private boolean isSorted = false;
     protected String encoding = "UTF-8";
 
@@ -173,9 +186,10 @@ public abstract class AbstractDocumentSource<D extends AbstractReader & ClassSwa
     }
 
     public void toSwaggerDocuments(String uiDocBasePath, String outputFormats, String fileName, String encoding) throws GenerateException {
+        ObjectMapper mapper = Json.mapper().copy();
         mapper.configure(SerializationFeature.WRITE_EMPTY_JSON_ARRAYS, false);
-
-        mapper = mapper.copy();
+        mapper.setPropertyNamingStrategy(PropertyNamingStrategy.LOWER_CAMEL_CASE);
+        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
         if (jsonExampleValues) {
             mapper.addMixInAnnotations(Property.class, PropertyExampleMixIn.class);

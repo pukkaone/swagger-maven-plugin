@@ -2,6 +2,7 @@ package com.github.kongchen.smp.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.github.kongchen.swagger.docgen.mavenplugin.ApiDocumentMojo;
 import com.github.kongchen.swagger.docgen.mavenplugin.ApiSource;
 import com.google.common.base.CharMatcher;
@@ -22,14 +23,22 @@ import org.testng.annotations.Test;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import static com.github.kongchen.smp.integration.utils.TestUtils.*;
+import static com.github.kongchen.smp.integration.utils.TestUtils.YamlToJson;
+import static com.github.kongchen.smp.integration.utils.TestUtils.changeDescription;
+import static com.github.kongchen.smp.integration.utils.TestUtils.createTempDirPath;
+import static com.github.kongchen.smp.integration.utils.TestUtils.setCustomReader;
 import static net.javacrumbs.jsonunit.JsonAssert.assertJsonEquals;
 import static net.javacrumbs.jsonunit.core.Option.IGNORING_ARRAY_ORDER;
 
@@ -64,6 +73,25 @@ public class SpringMvcTest extends AbstractMojoTestCase {
     protected void tearDown() throws Exception {
     	super.tearDown();
     	SwaggerExtensions.setExtensions(extensions);
+        Json.mapper().setPropertyNamingStrategy(PropertyNamingStrategy.LOWER_CAMEL_CASE);
+    }
+
+    @Test
+    public void given_model_converter_when_generate_swagger_json() throws Exception {
+        List<ApiSource> apisources = (List<ApiSource>) getVariableValueFromObject(mojo, "apiSources");
+        ApiSource apiSource = apisources.get(0);
+        apiSource.setModelConverters(Arrays.asList(PropertyNamingModelConverter.class.getName()));
+
+        mojo.execute();
+
+        ObjectMapper objectMapper = Json.mapper();
+        JsonNode actualJson = objectMapper.readTree(new File(swaggerOutputDir, "swagger.json"));
+
+        JsonNode basePath = actualJson.get("basePath");
+        assertNotNull(basePath);
+
+        JsonNode firstName = actualJson.at("/definitions/User/properties/first_name");
+        assertFalse(firstName.isMissingNode());
     }
 
     @Test

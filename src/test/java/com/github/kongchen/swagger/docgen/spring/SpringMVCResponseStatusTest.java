@@ -108,7 +108,8 @@ public class SpringMVCResponseStatusTest {
 
         for (Map.Entry<HttpStatus, Response> expectedResult : expectedResults.entrySet())
         {
-            Response response = responseMap.get(expectedResult.getKey().toString());
+            String expectedHttpStatus = String.valueOf(expectedResult.getKey().value());
+            Response response = responseMap.get(expectedHttpStatus);
             Assert.assertNotNull(response);
             Assert.assertEquals(response.getDescription(), expectedResult.getValue().getDescription());
             Assert.assertEquals(response.getResponseSchema(), expectedResult.getValue().getResponseSchema());

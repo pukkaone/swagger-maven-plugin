@@ -4,11 +4,19 @@ import com.github.kongchen.swagger.docgen.GenerateException;
 import com.github.kongchen.swagger.docgen.spring.SpringResource;
 import com.github.kongchen.swagger.docgen.spring.SpringSwaggerExtension;
 import com.github.kongchen.swagger.docgen.util.SpringUtils;
-import io.swagger.annotations.*;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiResponses;
+import io.swagger.annotations.Authorization;
+import io.swagger.annotations.AuthorizationScope;
 import io.swagger.converter.ModelConverters;
 import io.swagger.jaxrs.ext.SwaggerExtension;
 import io.swagger.jaxrs.ext.SwaggerExtensions;
-import io.swagger.models.*;
+import io.swagger.models.Model;
+import io.swagger.models.Operation;
+import io.swagger.models.Response;
+import io.swagger.models.SecurityRequirement;
+import io.swagger.models.Swagger;
 import io.swagger.models.Tag;
 import io.swagger.models.parameters.Parameter;
 import io.swagger.models.properties.Property;
@@ -21,12 +29,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.service.annotation.HttpExchange;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.apache.commons.lang3.StringUtils.defaultIfEmpty;
 import static org.springframework.core.annotation.AnnotatedElementUtils.findMergedAnnotation;
@@ -76,7 +91,7 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
 
         // Add the description from the controller api
         Class<?> controller = resource.getControllerClass();
-        RequestMapping controllerRM = findMergedAnnotation(controller, RequestMapping.class);
+        RequestMapping controllerRM = findMergedRequestMappingAnnotation(controller);
 
         String[] controllerProduces = new String[0];
         String[] controllerConsumes = new String[0];
@@ -101,7 +116,7 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
 
         for (String path : apiMethodMap.keySet()) {
             for (Method method : apiMethodMap.get(path)) {
-                RequestMapping requestMapping = findMergedAnnotation(method, RequestMapping.class);
+                RequestMapping requestMapping = findMergedRequestMappingAnnotation(method);
                 if (requestMapping == null) {
                     continue;
                 }
@@ -144,7 +159,7 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
         int responseCode = 200;
         Operation operation = new Operation();
 
-        RequestMapping requestMapping = findMergedAnnotation(method, RequestMapping.class);
+        RequestMapping requestMapping = findMergedRequestMappingAnnotation(method);
         Type responseClass = null;
         List<String> produces = new ArrayList<String>();
         List<String> consumes = new ArrayList<String>();
@@ -335,7 +350,7 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
     private Map<String, List<Method>> collectApisByRequestMapping(List<Method> methods) {
         Map<String, List<Method>> apiMethodMap = new HashMap<String, List<Method>>();
         for (Method method : methods) {
-            RequestMapping requestMapping = findMergedAnnotation(method, RequestMapping.class);
+            RequestMapping requestMapping = findMergedRequestMappingAnnotation(method);
             if (requestMapping != null) {
                 String path;
                 if (requestMapping.value().length != 0) {
@@ -364,9 +379,70 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
         }
     }
 
+    private static RequestMapping toRequestMapping(HttpExchange httpExchange) {
+        return new RequestMapping() {
+            @Override
+            public Class<? extends Annotation> annotationType() {
+                return RequestMapping.class;
+            }
+
+            @Override
+            public String name() {
+                return "";
+            }
+
+            @Override
+            public String[] value() {
+                return new String[]{httpExchange.value()};
+            }
+
+            @Override
+            public String[] path() {
+                return new String[]{httpExchange.value()};
+            }
+
+            @Override
+            public RequestMethod[] method() {
+                return new RequestMethod[]{RequestMethod.resolve(httpExchange.method())};
+            }
+
+            @Override
+            public String[] params() {
+                return new String[0];
+            }
+
+            @Override
+            public String[] headers() {
+                return new String[0];
+            }
+
+            @Override
+            public String[] consumes() {
+                return new String[]{httpExchange.contentType()};
+            }
+
+            @Override
+            public String[] produces() {
+                return httpExchange.accept();
+            }
+        };
+    }
+
+    private static RequestMapping findMergedRequestMappingAnnotation(AnnotatedElement element) {
+        RequestMapping requestMapping = findMergedAnnotation(element, RequestMapping.class);
+        if (requestMapping == null) {
+            HttpExchange httpExchange = findMergedAnnotation(element, HttpExchange.class);
+            if (httpExchange != null) {
+                requestMapping = toRequestMapping(httpExchange);
+            }
+        }
+
+        return requestMapping;
+    }
+
     //Helper method for loadDocuments()
     private Map<String, SpringResource> analyzeController(Class<?> controllerClazz, Map<String, SpringResource> resourceMap, String description) {
-	String[] controllerRequestMappingValues = SpringUtils.getControllerResquestMapping(controllerClazz);
+        String[] controllerRequestMappingValues = SpringUtils.getControllerRequestMapping(controllerClazz);
 
         // Iterate over all value attributes of the class-level RequestMapping annotation
         for (String controllerRequestMappingValue : controllerRequestMappingValues) {
@@ -375,7 +451,7 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
                 if (method.isSynthetic()) {
                     continue;
                 }
-                RequestMapping methodRequestMapping = findMergedAnnotation(method, RequestMapping.class);
+                RequestMapping methodRequestMapping = findMergedRequestMappingAnnotation(method);
 
                 // Look for method-level @RequestMapping annotation
                 if (methodRequestMapping != null) {
@@ -423,10 +499,22 @@ public class SpringMvcApiReader extends AbstractReader implements ClassSwaggerRe
         return resourceMap;
     }
 
+    private static RequestMapping findRequestMappingAnnotation(AnnotatedElement element) {
+        RequestMapping requestMapping = findAnnotation(element, RequestMapping.class);
+        if (requestMapping == null) {
+            HttpExchange httpExchange = findAnnotation(element, HttpExchange.class);
+            if (httpExchange != null) {
+                requestMapping = toRequestMapping(httpExchange);
+            }
+        }
+
+        return requestMapping;
+    }
+
     protected Map<String, SpringResource> generateResourceMap(Set<Class<?>> validClasses) throws GenerateException {
         Map<String, SpringResource> resourceMap = new HashMap<String, SpringResource>();
         for (Class<?> aClass : validClasses) {
-            RequestMapping requestMapping = findAnnotation(aClass, RequestMapping.class);
+            RequestMapping requestMapping = findRequestMappingAnnotation(aClass);
             //This try/catch block is to stop a bamboo build from failing due to NoClassDefFoundError
             //This occurs when a class or method loaded by reflections contains a type that has no dependency
             try {
